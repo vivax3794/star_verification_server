@@ -34,8 +34,18 @@ async fn post_stars(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     console_log!("lenght of stars: {}", data.stars.len());
 
     // store the stars in KV
-    let mut kv = crate::database::CFWorkersKV::new();
+    let mut kv = crate::database::CFWorkersKV::new(&ctx);
     kv.store_stars(data).await;
+
+    // Send discord msg
+    let discord_token = ctx.secret("DISCORD_BOT_TOKEN").unwrap().to_string();
+    let discord_channel = ctx.var("DISCORD_STAR_CHANNEL").unwrap().to_string();
+
+    let msg = crate::discord::Message {
+        content: String::from("Some stars were posted, but I dont wanna show you!"),
+    };
+
+    crate::discord::send_message(&discord_token, &discord_channel, &msg).await;
 
     Response::ok("Stars Saved")
 }

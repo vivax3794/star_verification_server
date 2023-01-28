@@ -6,8 +6,15 @@ kv_namespaces = [
 	{ binding = "stars", id = "76942dd6f9a140beb118a6c2e324d279", preview_id = "25d77254dfd14a07bed508ad1e33b9f7" }
 ]
 
+# Secrets
+# - DISCORD_PUBLIC_KEY
+# - DISCORD_BOT_TOKEN
+
+
+
 [vars]
 WORKERS_RS_VERSION = "0.0.11"
+DISCORD_STAR_CHANNEL = "964527512761798706"
 
 [build]
 command = "cargo install -q worker-build --version 0.0.7 && worker-build --release"

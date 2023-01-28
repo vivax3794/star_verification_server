@@ -1,5 +1,5 @@
 use crate::stars::StarData;
-use worker::console_log;
+use worker::{console_log, RouteContext};
 
 pub struct DbReference(pub String);
 
@@ -10,9 +10,9 @@ pub struct CFWorkersKV {
 }
 
 impl CFWorkersKV {
-    pub fn new() -> Self {
+    pub fn new(ctx: &RouteContext<()>) -> Self {
         Self {
-            kv: worker::kv::KvStore::create(STAR_KV_BINDING).unwrap(),
+            kv: ctx.kv(STAR_KV_BINDING).unwrap(),
         }
     }
 
