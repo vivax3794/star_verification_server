@@ -1,17 +1,12 @@
 use worker::*;
 
+mod database;
 mod discord;
 mod stars;
 mod utils;
 
 fn log_request(req: &Request) {
-    console_log!(
-        "{} - [{}], located at: {:?}, within: {}",
-        Date::now().to_string(),
-        req.path(),
-        req.cf().coordinates().unwrap_or_default(),
-        req.cf().region().unwrap_or_else(|| "unknown region".into())
-    );
+    console_log!("{} - [{}]", Date::now().to_string(), req.path(),);
 }
 
 #[event(fetch)]
@@ -39,49 +34,56 @@ async fn post_stars(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     console_log!("lenght of stars: {}", data.stars.len());
 
     // store the stars in KV
-    let star_store = ctx.kv("stars").unwrap();
-    let id_to_use = uuid::Uuid::new_v4();
-    star_store
-        .put(&id_to_use.to_string(), data)
-        .unwrap()
-        .expiration_ttl(60 * 60)
-        .execute()
-        .await
-        .unwrap();
-    console_log!("Saved using: {id_to_use}");
+    let mut kv = crate::database::CFWorkersKV::new();
+    kv.store_stars(data).await;
 
     Response::ok("Stars Saved")
+}
+
+fn verify_signature(
+    req: &mut Request,
+    ctx: &RouteContext<()>,
+    raw_data: &str,
+) -> Option<Result<Response>> {
+    // Get info
+    let public_key = ctx.secret("DISCORD_PUBLIC_KEY").unwrap();
+    let headers = req.headers();
+
+    let signature = if let Ok(Some(sig)) = headers.get("X-Signature-Ed25519") {
+        sig
+    } else {
+        return Some(Response::error("INVALID SIGNATURE", 401));
+    };
+
+    let timestamp = if let Ok(Some(tim)) = headers.get("X-Signature-Timestamp") {
+        tim
+    } else {
+        return Some(Response::error("INVALID SIGNATURE", 401));
+    };
+
+    // Parse data
+    let public_key =
+        ed25519_dalek::PublicKey::from_bytes(&hex::decode(public_key.to_string()).unwrap())
+            .unwrap();
+    let signature = ed25519_dalek::Signature::from_bytes(&hex::decode(signature).unwrap()).unwrap();
+
+    // Verify
+    if let Err(err) =
+        public_key.verify_strict(format!("{timestamp}{raw_data}").as_bytes(), &signature)
+    {
+        console_log!("{err:?}");
+        return Some(Response::error("INVALID SIGNATURE", 401));
+    }
+
+    None
 }
 
 async fn handle_interaction(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let raw_data = req.text().await.unwrap();
 
     // Verify signature
-    let public_key = ctx.secret("DISCORD_PUBLIC_KEY").unwrap();
-    let headers = req.headers();
-    console_log!("{headers:?}");
-    let signature = if let Ok(Some(sig)) = headers.get("X-Signature-Ed25519") {
-        sig
-    } else {
-        return Response::error("INVALID SIGNATURE", 401);
-    };
-    let timestamp = if let Ok(Some(tim)) = headers.get("X-Signature-Timestamp") {
-        tim
-    } else {
-        return Response::error("INVALID SIGNATURE", 401);
-    };
-
-    console_log!("VERIFYING");
-    let public_key =
-        ed25519_dalek::PublicKey::from_bytes(&hex::decode(public_key.to_string()).unwrap())
-            .unwrap();
-    let signature = ed25519_dalek::Signature::from_bytes(&hex::decode(signature).unwrap()).unwrap();
-
-    if let Err(err) =
-        public_key.verify_strict(format!("{timestamp}{raw_data}").as_bytes(), &signature)
-    {
-        console_log!("{err:?}");
-        return Response::error("INVALID SIGNATURE", 401);
+    if let Some(resp) = verify_signature(&mut req, &ctx, &raw_data) {
+        return resp;
     }
 
     // Parse data

@@ -1,5 +1,4 @@
-use serde::{Deserialize, Serialize};
-use worker::console_log;
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", content = "data")]
